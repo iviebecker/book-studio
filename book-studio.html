@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Book Studio</title>
+<style>
+:root{--bg:#f7f4ee;--panel:#fffdf9;--ink:#2a2622;--mute:#7a7167;--line:#e4ddd0;--acc:#2f6b5e;--accb:#e3efe9;--warn:#b4472f;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1917;--panel:#242120;--ink:#ece6dc;--mute:#9a9186;--line:#38332f;--acc:#7fc4b2;--accb:#25332f;--warn:#e58a72}}
+:root[data-theme="dark"]{--bg:#1b1917;--panel:#242120;--ink:#ece6dc;--mute:#9a9186;--line:#38332f;--acc:#7fc4b2;--accb:#25332f;--warn:#e58a72}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+#title{font:600 20px Georgia,"Times New Roman",serif;border:0;background:none;color:var(--ink);flex:1;min-width:160px;outline:none}
+#status{font-size:12px;color:var(--mute)}
+.wrap{display:grid;grid-template-columns:190px 1fr;min-height:calc(100vh - 58px)}
+nav{border-right:1px solid var(--line);padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+nav button{text-align:left;border:0;background:none;color:var(--ink);padding:9px 12px;border-radius:8px;font:inherit;cursor:pointer}
+nav button.on{background:var(--accb);color:var(--acc);font-weight:600}
+nav small{display:block;color:var(--mute);font-weight:400;font-size:12px}
+main{padding:20px 24px;max-width:1000px;width:100%}
+h2{font:600 22px Georgia,serif;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 16px}
+textarea,input,select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+textarea{resize:vertical;line-height:1.7}
+textarea.prose{font:17px/1.8 Georgia,"Times New Roman",serif;min-height:60vh;padding:16px 18px}
+button.b{background:var(--acc);color:var(--panel);border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+button.g{background:none;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:6px 10px;font:inherit;cursor:pointer}
+button.d{color:var(--warn)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.mute{color:var(--mute);font-size:13px}
+.two{display:grid;grid-template-columns:220px 1fr;gap:16px}
+.chl button{display:block;width:100%;text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 10px;border-radius:8px;margin-bottom:6px;font:inherit;cursor:pointer}
+.chl button.on{border-color:var(--acc);background:var(--accb)}
+.pill{font-size:11px;color:var(--mute);border:1px solid var(--line);border-radius:99px;padding:1px 8px;margin-left:6px}
+.bar{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.stats b{display:block;font:600 26px Georgia,serif}
+.done{text-decoration:line-through;color:var(--mute)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:99px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.s{opacity:1}
+@media(max-width:760px){.wrap{grid-template-columns:1fr}nav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line)}nav button{white-space:nowrap}nav small{display:none}.two{grid-template-columns:1fr}main{padding:16px}}
+</style>
+</head>
+<body>
+<header><input id="title" aria-label="Book title" placeholder="Working title…" oninput="S.title=this.value;touch('meta')"><span id="status"></span></header>
+<div class="wrap"><nav id="nav"></nav><main id="main">Loading your book…</main></div>
+<div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const wc=t=>((t||'').trim().match(/\S+/g)||[]).length;
+const STAT=['Idea','Drafting','Revising','Done'];
+const KINDS=['Person','Place','Fact','Timeline','Other'];
+let S={title:'',ideas:'',chapters:[],park:[],bible:[],target:60000,base:null},C={},view='ideas',cur=null,store,mode='browser',dirty=new Set(),timer;
+
+const ls={async get(k){try{const v=localStorage.getItem('bk:'+k);return v?JSON.parse(v):null}catch(e){return null}},
+async set(k,v){try{localStorage.setItem('bk:'+k,JSON.stringify(v))}catch(e){}},
+async del(k){try{localStorage.removeItem('bk:'+k)}catch(e){}}};
+const dbStore=col=>({async get(k){const s=await col.doc(k).get();return s.exists?JSON.parse(s.data().j):null},
+async set(k,v){await col.doc(k).set({j:JSON.stringify(v)})},async del(k){await col.doc(k).delete()}});
+
+function toast(m){const t=$('#toast');t.textContent=m;t.className='s';setTimeout(()=>t.className='',2200)}
+function touch(k){dirty.add(k);$('#status').textContent='Unsaved changes…';clearTimeout(timer);timer=setTimeout(flush,800)}
+async function flush(){const ks=[...dirty];dirty.clear();
+ try{for(const k of ks){if(k==='meta')await store.set('meta',S);else if(k.startsWith('ch_')){const id=k.slice(3);if(C[id]!=null)await store.set(k,C[id])}}
+ $('#status').textContent=mode==='cloud'?'Saved to your account':'Saved in this browser only'}
+ catch(e){$('#status').textContent='Couldn’t save – copy your work to be safe'}}
+const total=()=>S.chapters.reduce((n,c)=>n+wc(C[c.id]),0);
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()};
+
+async function init(){
+ store=ls;
+ try{if(typeof claude!=='undefined'){const u=await claude.use('user'),db=await claude.use('db');
+  if(u&&db){const id=await u.id();store=dbStore(db.collection('data/users/'+id));mode='cloud'}}}catch(e){store=ls;mode='browser'}
+ try{const m=await store.get('meta');if(m)S={...S,...m};
+  await Promise.all(S.chapters.map(async c=>{C[c.id]=(await store.get('ch_'+c.id))||''}))}
+ catch(e){if(mode==='cloud'){store=ls;mode='browser'}}
+ if(!S.base||S.base.date!==today()){S.base={date:today(),words:total()};touch('meta')}
+ $('#title').value=S.title;
+ $('#status').textContent=mode==='cloud'?'Saved to your account':'Saved in this browser only';
+ render();
+}
+
+function go(v){view=v;render()}
+function render(){
+ const tabs=[['ideas','Free flow','Ideas & rambling'],['chapters','Chapters',S.chapters.length+' so far'],['park','Parking lot','Not sure where yet'],['bible','Story bible','People, places, facts'],['progress','Progress','Words & export']];
+ $('#nav').innerHTML=tabs.map(t=>`<button class="${view===t[0]?'on':''}" onclick="go('${t[0]}')">${t[1]}<small>${t[2]}</small></button>`).join('');
+ $('#main').innerHTML=({ideas:vIdeas,chapters:vCh,park:vPark,bible:vBible,progress:vProg})[view]();
+}
+
+function vIdeas(){return `<h2>Free flow</h2><p class="sub">Write without a plan. Nothing here has to make sense yet.</p>
+<textarea id="ideas" class="prose" placeholder="Start anywhere…" oninput="S.ideas=this.value;touch('meta');$('#iw').textContent=wc(this.value)+' words'">${esc(S.ideas)}</textarea>
+<div class="row"><button class="g" onclick="sendSel()">Send highlighted text to the parking lot</button><span class="mute" id="iw">${wc(S.ideas)} words</span></div>`}
+function sendSel(){const t=$('#ideas'),s=t.value.slice(t.selectionStart,t.selectionEnd).trim();
+ if(!s)return toast('Highlight some text first');S.park.unshift({id:uid(),text:s,ch:'',done:false});touch('meta');toast('Added to the parking lot')}
+
+function addCh(){const id=uid();S.chapters.push({id,title:'',status:'Idea'});C[id]='';cur=id;touch('meta');touch('ch_'+id);view='chapters';render()}
+function openCh(id){cur=id;render()}
+function chOf(id){return S.chapters.find(c=>c.id===id)}
+function mv(id,d){const i=S.chapters.findIndex(c=>c.id===id),j=i+d;if(j<0||j>=S.chapters.length)return;
+ [S.chapters[i],S.chapters[j]]=[S.chapters[j],S.chapters[i]];touch('meta');render()}
+async function rmCh(id){S.chapters=S.chapters.filter(c=>c.id!==id);S.park.forEach(p=>{if(p.ch===id)p.ch=''});delete C[id];
+ try{await store.del('ch_'+id)}catch(e){}cur=null;touch('meta');render()}
+function del2(b,fn){if(b.dataset.a){fn()}else{b.dataset.a=1;b.textContent='Sure?';setTimeout(()=>{b.dataset.a='';b.textContent='Delete'},3000)}}
+
+function vCh(){
+ if(!S.chapters.length)return `<h2>Chapters</h2><p class="sub">Nothing here yet. Add your first chapter – a rough title is plenty.</p><button class="b" onclick="addCh()">Add a chapter</button>`;
+ if(!chOf(cur))cur=S.chapters[0].id;
+ const c=chOf(cur),n=S.chapters.indexOf(c)+1,inc=S.park.filter(p=>p.ch===cur);
+ return `<h2>Chapters</h2><div class="two"><div class="chl">${S.chapters.map((x,i)=>`<button class="${x.id===cur?'on':''}" onclick="openCh('${x.id}')">${i+1}. ${esc(x.title||'Untitled')}<span class="pill">${x.status}</span></button>`).join('')}<button onclick="addCh()">+ Add chapter</button></div>
+<div><div class="row" style="margin-top:0"><input style="flex:1;min-width:180px" placeholder="Chapter ${n} title" value="${esc(c.title)}" oninput="chOf(cur).title=this.value;touch('meta')">
+<select style="width:auto" onchange="chOf(cur).status=this.value;touch('meta')">${STAT.map(s=>`<option ${s===c.status?'selected':''}>${s}</option>`).join('')}</select></div>
+<div class="row" style="margin-top:0"><button class="g" onclick="mv(cur,-1)">↑ Move up</button><button class="g" onclick="mv(cur,1)">↓ Move down</button><button class="g d" onclick="del2(this,()=>rmCh(cur))">Delete</button></div>
+<textarea class="prose" placeholder="Write chapter ${n} here…" oninput="C[cur]=this.value;touch('ch_'+cur);$('#cw').textContent=wc(this.value)+' words'">${esc(C[cur])}</textarea>
+<div class="mute" id="cw" style="margin-top:6px">${wc(C[cur])} words</div>
+${inc.length?`<div class="card" style="margin-top:12px"><b>To include in this chapter</b>${inc.map(p=>`<div class="row" style="margin:6px 0"><input type="checkbox" style="width:auto" ${p.done?'checked':''} onchange="tick('${p.id}')"><span class="${p.done?'done':''}">${esc(p.text)}</span></div>`).join('')}</div>`:''}
+</div></div>`}
+function tick(id){const p=S.park.find(x=>x.id===id);p.done=!p.done;touch('meta');render()}
+
+let pf='all';
+function addPark(){const t=$('#pt');if(!t.value.trim())return;S.park.unshift({id:uid(),text:t.value.trim(),ch:'',done:false});t.value='';touch('meta');render()}
+function vPark(){
+ const list=S.park.filter(p=>pf==='all'||!p.ch);
+ return `<h2>Parking lot</h2><p class="sub">Things you want in the book but haven’t found a home for. Assign them to a chapter when you’re ready.</p>
+<textarea id="pt" rows="2" placeholder="A scene, a quote, a story, a point to make…"></textarea>
+<div class="row"><button class="b" onclick="addPark()">Park it</button><button class="g" onclick="pf='all';render()">${pf==='all'?'● ':''}All (${S.park.length})</button><button class="g" onclick="pf='un';render()">${pf==='un'?'● ':''}Not placed yet (${S.park.filter(p=>!p.ch).length})</button></div>
+${list.map(p=>`<div class="card"><textarea rows="2" oninput="S.park.find(x=>x.id==='${p.id}').text=this.value;touch('meta')">${esc(p.text)}</textarea>
+<div class="row" style="margin-bottom:0"><select style="width:auto;max-width:60%" onchange="S.park.find(x=>x.id==='${p.id}').ch=this.value;touch('meta');render()"><option value="">Not placed yet</option>${S.chapters.map((c,i)=>`<option value="${c.id}" ${p.ch===c.id?'selected':''}>Ch ${i+1}: ${esc(c.title||'Untitled')}</option>`).join('')}</select>
+<button class="g d" onclick="del2(this,()=>{S.park=S.park.filter(x=>x.id!=='${p.id}');touch('meta');render()})">Delete</button></div></div>`).join('')||'<p class="mute">Nothing parked here.</p>'}`}
+
+function addBible(){S.bible.unshift({id:uid(),name:'',kind:'Person',notes:''});touch('meta');render()}
+function vBible(){return `<h2>Story bible</h2><p class="sub">Keep track of people, places, facts and dates so the book stays consistent.</p>
+<button class="b" onclick="addBible()">Add an entry</button><div style="margin-top:12px">
+${S.bible.map(b=>`<div class="card"><div class="row" style="margin-top:0"><input style="flex:1;min-width:150px" placeholder="Name or label" value="${esc(b.name)}" oninput="S.bible.find(x=>x.id==='${b.id}').name=this.value;touch('meta')">
+<select style="width:auto" onchange="S.bible.find(x=>x.id==='${b.id}').kind=this.value;touch('meta')">${KINDS.map(k=>`<option ${k===b.kind?'selected':''}>${k}</option>`).join('')}</select>
+<button class="g d" onclick="del2(this,()=>{S.bible=S.bible.filter(x=>x.id!=='${b.id}');touch('meta');render()})">Delete</button></div>
+<textarea rows="3" placeholder="Details, backstory, sources…" oninput="S.bible.find(x=>x.id==='${b.id}').notes=this.value;touch('meta')">${esc(b.notes)}</textarea></div>`).join('')||'<p class="mute">No entries yet.</p>'}</div>`}
+
+const ms=()=>(S.title||'Untitled book')+'\n\n'+S.chapters.map((c,i)=>`Chapter ${i+1}: ${c.title||'Untitled'}\n\n${C[c.id]||''}`).join('\n\n\n');
+async function copyMs(){try{await navigator.clipboard.writeText(ms());toast('Manuscript copied')}catch(e){toast('Couldn’t copy – try the download')}}
+async function dlMs(){try{const d=await claude.use('downloads');if(!d)return toast('Download isn’t available here');
+ await d.save({filename:((S.title||'manuscript').replace(/[^\w\- ]+/g,'').trim()||'manuscript')+'.txt',data:ms()})}catch(e){toast('Download didn’t go through')}}
+function vProg(){const t=total(),pct=Math.min(100,Math.round(t/Math.max(1,S.target)*100)),td=Math.max(0,t-(S.base?S.base.words:t));
+ return `<h2>Progress</h2><p class="sub">Counted across your chapters.</p>
+<div class="stats"><div class="card"><b>${t.toLocaleString('en-NZ')}</b>words written</div><div class="card"><b>${td.toLocaleString('en-NZ')}</b>words today</div><div class="card"><b>${S.chapters.filter(c=>c.status==='Done').length}/${S.chapters.length}</b>chapters done</div></div>
+<div class="card"><div class="row" style="margin-top:0"><label for="tg">Target word count</label><input id="tg" type="number" min="1000" step="1000" style="width:130px" value="${S.target}" onchange="S.target=+this.value||60000;touch('meta');render()"><span class="mute">${pct}% there</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>
+${S.chapters.map((c,i)=>`<div class="row" style="margin:6px 0"><span style="flex:1">${i+1}. ${esc(c.title||'Untitled')}<span class="pill">${c.status}</span></span><span class="mute">${wc(C[c.id]).toLocaleString('en-NZ')} words</span></div>`).join('')}
+<h2 style="margin-top:24px">Export</h2><div class="row"><button class="b" onclick="copyMs()">Copy manuscript</button><button class="g" onclick="dlMs()">Download as .txt</button></div>`}
+
+init();
+</script>
+</body>
+</html>
